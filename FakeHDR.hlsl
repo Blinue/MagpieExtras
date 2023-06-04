@@ -76,5 +76,5 @@ float4 Pass1(float2 pos) {
 	const float3 HDR = (color + (bloom_sum2 - bloom_sum1)) * (fradius2 - fradius1);
 
 	// pow - don't use fractions for HDRpower
-	return float4(pow(abs(HDR + color), abs(fHDRPower) + HDR), 1);
+	return float4(saturate(pow(abs(HDR + color), abs(fHDRPower)) + HDR), 1);
 }
