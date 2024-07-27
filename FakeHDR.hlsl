@@ -1,9 +1,7 @@
 // 移植自 https://github.com/Mortalitas/GShade/blob/master/Shaders/FakeHDR.fx
 
 //!MAGPIE EFFECT
-//!VERSION 3
-//!OUTPUT_WIDTH INPUT_WIDTH
-//!OUTPUT_HEIGHT INPUT_HEIGHT
+//!VERSION 4
 
 //!PARAMETER
 //!LABEL Power
@@ -32,6 +30,11 @@ float fradius2;
 //!TEXTURE
 Texture2D INPUT;
 
+//!TEXTURE
+//!WIDTH INPUT_WIDTH
+//!HEIGHT INPUT_HEIGHT
+Texture2D OUTPUT;
+
 //!SAMPLER
 //!FILTER LINEAR
 SamplerState sam;
@@ -40,6 +43,7 @@ SamplerState sam;
 //!PASS 1
 //!STYLE PS
 //!IN INPUT
+//!OUT OUTPUT
 
 float4 Pass1(float2 pos) {
 	const float3 color = INPUT.SampleLevel(sam, pos, 0).rgb;
