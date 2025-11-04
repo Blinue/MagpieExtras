@@ -36,8 +36,9 @@ float spline16_weight(float x) {
     } else if (x < 2.0) {
         float t = x - 1.0;
         return ((-1.0/3.0 * t + 4.0/5.0) * t - 7.0/15.0) * t;
-    }
-    return 0.0;
+	} else {
+		return 0.0;
+	}
 }
 
 float spline36_weight(float x) {
@@ -50,8 +51,9 @@ float spline36_weight(float x) {
     } else if (x < 3.0) {
         float t = x - 2.0;
         return ((1.0/11.0 * t - 45.0/209.0) * t + 26.0/209.0) * t;
-    }
-    return 0.0;
+	} else {
+		return 0.0;
+	}
 }
 
 float spline64_weight(float x) {
@@ -67,8 +69,9 @@ float spline64_weight(float x) {
     } else if (x < 4.0) {
         float t = x - 3.0;
         return ((-1.0/41.0 * t + 168.0/2911.0) * t - 97.0/2911.0) * t;
-    }
-    return 0.0;
+	} else {
+		return 0.0;
+	}
 }
 
 float spline_weight(float x, int type) {
@@ -87,7 +90,7 @@ float4 Pass1(float2 pos) {
     float2 inputSize = GetInputSize();
     float2 inputPt = GetInputPt();
 
-    int kernelSize = splineType == 1 ? 4 : (splineType == 2 ? 6 : 8);
+    uint kernelSize = splineType == 1 ? 4u : (splineType == 2 ? 6u : 8u);
     float2 inputPos = pos * inputSize;
     float2 base = floor(inputPos - 0.5) + 0.5;
     float2 f = inputPos - base;
@@ -96,19 +99,20 @@ float4 Pass1(float2 pos) {
     float weightsY[MAX_KERNEL_SIZE];
     float sumX = 0.0;
     float sumY = 0.0;
+    
+	uint i, j;
 
     [unroll]
-    for (int i = 0; i < kernelSize; i++) {
-        float offsetX = f.x - (i - kernelSize / 2 + 1);
-        float offsetY = f.y - (i - kernelSize / 2 + 1);
-        weightsX[i] = spline_weight(offsetX, splineType);
-        weightsY[i] = spline_weight(offsetY, splineType);
+	for (i = 0; i < kernelSize; i++) {
+		float2 offset = f - (int(i) - int(kernelSize / 2) + 1);
+        weightsX[i] = spline_weight(offset.x, splineType);
+        weightsY[i] = spline_weight(offset.y, splineType);
         sumX += weightsX[i];
         sumY += weightsY[i];
     }
 
     [unroll]
-    for (int i = 0; i < kernelSize; i++) {
+	for (i = 0; i < kernelSize; i++) {
         weightsX[i] /= sumX;
         weightsY[i] /= sumY;
     }
@@ -117,20 +121,20 @@ float4 Pass1(float2 pos) {
 
     float3 color = 0.0;
     [unroll]
-    for (int y = 0; y < kernelSize; y += 2) {
+	for (j = 0; j < kernelSize; j += 2) {
         [unroll]
-        for (int x = 0; x < kernelSize; x += 2) {
-            float2 tpos = (base + uint2(x, y)) * inputPt;
+		for (i = 0; i < kernelSize; i += 2) {
+            float2 tpos = (base + uint2(i, j)) * inputPt;
             const float4 sr = INPUT.GatherRed(sam, tpos);
             const float4 sg = INPUT.GatherGreen(sam, tpos);
             const float4 sb = INPUT.GatherBlue(sam, tpos);
 
             // w z
             // x y
-            color += float3(sr.w, sg.w, sb.w) * weightsX[x] * weightsY[y];
-            color += float3(sr.z, sg.z, sb.z) * weightsX[x + 1] * weightsY[y];
-            color += float3(sr.x, sg.x, sb.x) * weightsX[x] * weightsY[y + 1];
-            color += float3(sr.y, sg.y, sb.y) * weightsX[x + 1] * weightsY[y + 1];
+            color += float3(sr.w, sg.w, sb.w) * weightsX[i] * weightsY[j];
+            color += float3(sr.z, sg.z, sb.z) * weightsX[i + 1] * weightsY[j];
+            color += float3(sr.x, sg.x, sb.x) * weightsX[i] * weightsY[j + 1];
+            color += float3(sr.y, sg.y, sb.y) * weightsX[i + 1] * weightsY[j + 1];
         }
     }
 
