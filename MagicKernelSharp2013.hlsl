@@ -1,8 +1,15 @@
+// 基于 https://johncostella.com/magic/
 
 //!MAGPIE EFFECT
 //!VERSION 4
 
-#include "StubDefs.hlsli"
+//!PARAMETER
+//!LABEL Anti-ringing Strength
+//!DEFAULT 0.5
+//!MIN 0
+//!MAX 1
+//!STEP 0.01
+float ARStrength;
 
 //!TEXTURE
 Texture2D INPUT;
@@ -10,72 +17,83 @@ Texture2D INPUT;
 //!TEXTURE
 Texture2D OUTPUT;
 
+//!TEXTURE
+//!WIDTH INPUT_WIDTH
+//!HEIGHT OUTPUT_HEIGHT
+//!FORMAT R8G8B8A8_UNORM
+Texture2D T1;
+
 //!SAMPLER
 //!FILTER POINT
 SamplerState sam;
 
+//!COMMON
 
-//!PASS 1
-//!DESC Magic Kernel Sharp 2013
-//!STYLE PS
-//!IN INPUT
-//!OUT OUTPUT
-
-#define KERNEL_RADIUS 2.5
-#define UPSCALE_RADIUS 3
-
-float magic_kernel_sharp_2013(float x) {
+float weight(float x) {
 	x = abs(x);
-	if (x <= 0.5) return 17.0/16.0 - (7.0/4.0) * x * x;
-	if (x <= 1.5) return 0.25 * (4.0 * x * x - 11.0 * x + 7.0);
-	if (x <= KERNEL_RADIUS) return -0.125 * (x - 2.5) * (x - 2.5);
-	return 0.0;
+	
+	if (x <= 0.5f) {
+		return 17.0f / 16.0f - x * x * 7.0f / 4.0f;
+	} else if (x <= 1.5f) {
+		return (1.0f - x) * (7.0f / 4.0f - x);
+	} else {
+		float t = x - 2.5f;
+		return t * t / -8.0f;
+	}
 }
 
+//!PASS 1
+//!STYLE PS
+//!IN INPUT
+//!OUT T1
+
 float4 Pass1(float2 pos) {
-	const float2 inputSize = GetInputSize();
-	const float2 outputSize = GetOutputSize();
+	const float inputPtY = GetInputPt().y;
+	
+	float x = 0.5f - frac(pos.y * GetInputSize().y);
+	pos.y += x * inputPtY;
+	
+	float3 color = INPUT.SampleLevel(sam, float2(pos.x, pos.y - 2 * inputPtY), 0).rgb * weight(x - 2);
+	float3 src2 = INPUT.SampleLevel(sam, float2(pos.x, pos.y - inputPtY), 0).rgb;
+	color += src2 * weight(x - 1);
+	float3 src3 = INPUT.SampleLevel(sam, pos, 0).rgb;
+	color += src3 * weight(x);
+	float3 src4 = INPUT.SampleLevel(sam, float2(pos.x, pos.y + inputPtY), 0).rgb;
+	color += src4 * weight(x + 1);
+	color += INPUT.SampleLevel(sam, float2(pos.x, pos.y + 2 * inputPtY), 0).rgb * weight(x + 2);
+	
+	// 抗振铃
+	float3 minSample = min(min(src2, src3), src4);
+	float3 maxSample = max(max(src2, src3), src4);
+	color = lerp(color, clamp(color, minSample, maxSample), ARStrength);
+	
+	return float4(color, 1);
+}
 
-	float2 ratio = inputSize / outputSize;
-	float2 scale = max(ratio, float2(1.0, 1.0));
+//!PASS 2
+//!STYLE PS
+//!IN T1
+//!OUT OUTPUT
 
-	int2 radius;
-	radius.x = (ratio.x > 1.0) ? (int)ceil(KERNEL_RADIUS * scale.x) : UPSCALE_RADIUS;
-	radius.y = (ratio.y > 1.0) ? (int)ceil(KERNEL_RADIUS * scale.y) : UPSCALE_RADIUS;
-
-	float2 src_pos = pos * inputSize - 0.5;
-	int2 src_base = (int2)floor(src_pos);
-	float2 frac_pos = src_pos - (float2)src_base;
-
-	float3 sum_color = 0.0;
-	float wsum = 0.0;
-
-	for (int ky = -radius.y; ky <= radius.y; ky++) {
-		int sy = src_base.y + ky;
-		if (sy < 0 || sy >= (int)inputSize.y) continue;
-
-		float dy_dist = abs(frac_pos.y - (float)ky) / scale.y;
-		if (dy_dist >= KERNEL_RADIUS) continue;
-		float wy = magic_kernel_sharp_2013(dy_dist);
-
-		for (int kx = -radius.x; kx <= radius.x; kx++) {
-			int sx = src_base.x + kx;
-			if (sx < 0 || sx >= (int)inputSize.x) continue;
-
-			float dx_dist = abs(frac_pos.x - (float)kx) / scale.x;
-			if (dx_dist >= KERNEL_RADIUS) continue;
-			float wx = magic_kernel_sharp_2013(dx_dist);
-
-			float w = wx * wy;
-			float3 sample_color = INPUT.Load(int3(sx, sy, 0)).rgb;
-			sum_color += sample_color * w;
-			wsum += w;
-		}
-	}
-
-	if (wsum > 0.0) {
-		sum_color /= wsum;
-	}
-
-	return float4(sum_color, 1.0);
+float4 Pass2(float2 pos) {
+	const float inputPtX = GetInputPt().x;
+	
+	float x = 0.5f - frac(pos.x * GetInputSize().x);
+	pos.x += x * inputPtX;
+	
+	float3 color = T1.SampleLevel(sam, float2(pos.x - 2 * inputPtX, pos.y), 0).rgb * weight(x - 2);
+	float3 src2 = T1.SampleLevel(sam, float2(pos.x - inputPtX, pos.y), 0).rgb;
+	color += src2 * weight(x - 1);
+	float3 src3 = T1.SampleLevel(sam, pos, 0).rgb;
+	color += src3 * weight(x);
+	float3 src4 = T1.SampleLevel(sam, float2(pos.x + inputPtX, pos.y), 0).rgb;
+	color += src4 * weight(x + 1);
+	color += T1.SampleLevel(sam, float2(pos.x + 2 * inputPtX, pos.y), 0).rgb * weight(x + 2);
+	
+	// 抗振铃
+	float3 minSample = min(min(src2, src3), src4);
+	float3 maxSample = max(max(src2, src3), src4);
+	color = lerp(color, clamp(color, minSample, maxSample), ARStrength);
+	
+	return float4(color, 1);
 }
